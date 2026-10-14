@@ -1,0 +1,13 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {"description": "Choose a sensor", "data": {"address": "Device"}},
+      "bluetooth_confirm": {"description": "Set up {name}?"}
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_devices_found": "No HomGar BLE sensors found"
+    }
+  }
+}
