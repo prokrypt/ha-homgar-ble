@@ -55,3 +55,18 @@ Reports for other models are welcome; include a few advertisement payloads and t
 
 See [docs/PROTOCOL.md](docs/PROTOCOL.md) for the advertisement format and the GATT authentication,
 reverse-engineered from the HomGar Android app.
+
+## Development
+
+The tests use [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component).
+They cover the advert and report decoding, the model registry, the GATT sync session against a scripted
+fake sensor, the config flows and entry setup. New models in `models.py` are checked automatically.
+
+```sh
+pip install -r requirements_test.txt
+python script/ha_requirements.py > /tmp/ha_requirements.txt
+pip install -r /tmp/ha_requirements.txt -c "$(python script/ha_requirements.py --constraints)"
+pytest
+```
+
+CI runs them against the minimum Home Assistant version and the one pinned in `requirements_test.txt`.
