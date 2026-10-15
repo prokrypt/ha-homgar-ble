@@ -111,7 +111,7 @@ HCS701B = HomGarModel(
         TEM: temp_f10("temperature"),
         RH: u8("humidity", invalid=0xFF),
         MAX_TEM: temp_f10_range("temperature"),
-        MAX_RH: u8_range("humidity"),
+        MAX_RH: u8_range("humidity", invalid=0xFF),
         BAT: u8("battery_level"),
     },
     sensors=(

@@ -5,7 +5,8 @@ The sensor offers a session only while its advert flags ask for a sync. Sequence
   device 52 ..  (did, home)  -> host D2 0C 00 <slot> E0 01 <home LE32> 00 00 00 00
   device 59 01 02 (time)     -> host D9 06 00 02 <T4 local time LE32>   (sometimes)
   device 54/55 <report>      -> host D4/D5 02 00 <stateVer>
-Any other settings request is left unanswered and the session ends.
+Any other request (settings, stats, history) is logged and left unanswered; the
+session ends once the report is in, or when the sensor hangs up, or on timeout.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import logging
 import struct
 
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from .parser import Field, Readings, decode_records
@@ -31,6 +33,12 @@ CHAR_NOTIFY = "4f68a302-b458-c812-9999-43686f75717a"
 SLOT = 1
 DP_TIME = 2
 SESSION_TIMEOUT = 20
+# Time for the final write-without-response (the report ack) to leave the adapter.
+ACK_GRACE = 0.5
+
+
+class SyncError(BleakError):
+    """The sensor did not complete the sync handshake."""
 
 
 def auth_reply(challenge: bytes, model: int, did: int, pcode: int = 0) -> bytes:
@@ -61,12 +69,24 @@ async def async_sync(
 
     `model` is the HomGar model code for the auth; `fields` decode the report.
     """
-    result: asyncio.Future[Readings] = (
-        asyncio.get_running_loop().create_future()
-    )
+    loop = asyncio.get_running_loop()
+    result: asyncio.Future[Readings] = loop.create_future()
+    frames: asyncio.Queue[tuple[int, bytes]] = asyncio.Queue()
     buf = bytearray()
+
+    def fail(err: BaseException) -> None:
+        if not result.done():
+            result.set_exception(err)
+
+    def on_disconnect(_: BleakClientWithServiceCache) -> None:
+        # The sensor drops the link after ~5 s without a valid auth answer.
+        fail(SyncError("sensor closed the connection before sending its report"))
+
     client = await establish_connection(
-        BleakClientWithServiceCache, device, device.name or device.address
+        BleakClientWithServiceCache,
+        device,
+        device.name or device.address,
+        disconnected_callback=on_disconnect,
     )
 
     async def send(data: bytes) -> None:
@@ -84,22 +104,39 @@ async def async_sync(
             await send(bytes([op | 0x80, 2, 0, p[0]]))
             if not result.done():
                 result.set_result(decode_records(p[1:], fields, with_dp_ids=op == 0x54))
-        elif not result.done():
-            result.set_exception(
-                RuntimeError(f"unexpected frame 0x{op:02x} {p.hex(' ')}")
-            )
+        else:
+            _LOGGER.debug("%s: ignoring frame 0x%02x %s", device.address, op, p.hex(" "))
+
+    async def consume() -> None:
+        # One consumer so replies go out in the order the frames arrived.
+        try:
+            while True:
+                op, payload = await frames.get()
+                await handle(op, payload)
+        except BleakError as err:
+            fail(err)
 
     def on_notify(_: object, data: bytearray) -> None:
         _LOGGER.debug("%s: notify %s", device.address, data.hex(" "))
         buf.extend(data)
         while len(buf) >= 2 and len(buf) >= 2 + buf[1]:
             op, n = buf[0], buf[1]
-            payload = bytes(buf[2 : 2 + n])
+            frames.put_nowait((op, bytes(buf[2 : 2 + n])))
             del buf[: 2 + n]
-            asyncio.get_running_loop().create_task(handle(op, payload))
 
+    consumer = loop.create_task(consume())
     try:
         await client.start_notify(CHAR_NOTIFY, on_notify)
-        return await asyncio.wait_for(result, SESSION_TIMEOUT)
+        try:
+            readings = await asyncio.wait_for(result, SESSION_TIMEOUT)
+        except TimeoutError as err:
+            raise SyncError(
+                f"no report within {SESSION_TIMEOUT} s (is the sensor asking for a sync?)"
+            ) from err
+        await asyncio.sleep(ACK_GRACE)
+        return readings
     finally:
-        await client.disconnect()
+        consumer.cancel()
+        result.cancel()  # no-op once it holds the report or an error
+        if client.is_connected:
+            await client.disconnect()
