@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes (leave empty to generate them from merged pull requests)
+        required: false
+        default: ""
+
+permissions: {}
+
+jobs:
+  release:
+    name: Publish release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Publish the manifest version as a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          tag="v$(jq -r .version custom_components/homgar_ble/manifest.json)"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release $tag already exists. Bump the version in manifest.json first."
+            exit 1
+          fi
+          if [ -n "$NOTES" ]; then
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes "$NOTES"
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
