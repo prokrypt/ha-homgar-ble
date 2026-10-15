@@ -19,6 +19,7 @@ from homeassistant.components.bluetooth.active_update_processor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 from .const import SERVICE_UUID
@@ -32,6 +33,11 @@ MODEL_CODE = int(SERVICE_UUID[:4], 16)  # 0x01469191 -> 0x0146
 MIN_SYNC_INTERVAL = 600
 
 type HomGarConfigEntry = ConfigEntry[ActiveBluetoothProcessorCoordinator]
+
+
+def device_info(entry: HomGarConfigEntry) -> DeviceInfo:
+    """Name the device after the config entry ("HCS701B 1D:5B") instead of the BLE name "HG"."""
+    return DeviceInfo(name=entry.title, manufacturer="HomGar/RainPoint", model="HCS701B")
 
 
 def _update(service_info: BluetoothServiceInfoBleak) -> dict[str, float | int]:

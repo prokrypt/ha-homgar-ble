@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
     PassiveBluetoothDataUpdate,
@@ -19,7 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import HomGarConfigEntry
+from . import HomGarConfigEntry, device_info
 
 _TEMP = dict(
     device_class=SensorDeviceClass.TEMPERATURE,
@@ -61,10 +63,12 @@ DESCRIPTIONS: dict[str, SensorEntityDescription] = {
 }
 
 
-def _to_update(readings: dict[str, float | int]) -> PassiveBluetoothDataUpdate:
+def _to_update(
+    info: DeviceInfo, readings: dict[str, float | int]
+) -> PassiveBluetoothDataUpdate:
     keys = {k: PassiveBluetoothEntityKey(k, None) for k in readings if k in DESCRIPTIONS}
     return PassiveBluetoothDataUpdate(
-        devices={None: DeviceInfo(manufacturer="HomGar/RainPoint", model="HCS701B")},
+        devices={None: info},
         entity_descriptions={ek: DESCRIPTIONS[k] for k, ek in keys.items()},
         entity_data={ek: readings[k] for k, ek in keys.items()},
         entity_names={},
@@ -77,7 +81,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    processor = PassiveBluetoothDataProcessor(_to_update)
+    processor = PassiveBluetoothDataProcessor(partial(_to_update, device_info(entry)))
     entry.async_on_unload(
         processor.async_add_entities_listener(HomGarSensor, async_add_entities)
     )
