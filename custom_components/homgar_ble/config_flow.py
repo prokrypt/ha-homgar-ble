@@ -59,7 +59,7 @@ class HomGarBleConfigFlow(ConfigFlow, domain=DOMAIN):
 
         current = self._async_current_ids(include_ignore=False)
         for info in async_discovered_service_info(self.hass, False):
-            if info.address not in current and SERVICE_UUID in info.service_uuids:
+            if info.address not in current and SERVICE_UUID in info.service_data:
                 self._found[info.address] = _title(info)
         if not self._found:
             return self.async_abort(reason="no_devices_found")
