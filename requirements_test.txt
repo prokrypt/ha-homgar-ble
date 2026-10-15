@@ -1,0 +1,4 @@
+# Test dependencies. This pin decides the Home Assistant version the suite runs against
+# (0.13.372 = Home Assistant 2026.10.1, Python 3.14). CI also runs the suite against the
+# minimum version in hacs.json; see .github/workflows/tests.yml.
+pytest-homeassistant-custom-component==0.13.372
