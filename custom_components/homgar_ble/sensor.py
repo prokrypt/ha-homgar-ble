@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -51,9 +51,12 @@ DESCRIPTIONS: dict[str, SensorEntityDescription] = {
     "humidity_max": SensorEntityDescription(
         key="humidity_max", name="Humidity max", entity_registry_enabled_default=False, **_HUM
     ),
-    # Raw battery status code (meaning not yet confirmed; HomGar uses 1 = OK).
+    # Raw HomGar battery status code from the sync report (0/1 = normal, higher = low).
     "battery_level": SensorEntityDescription(
-        key="battery_level", name="Battery status", state_class=SensorStateClass.MEASUREMENT
+        key="battery_level",
+        name="Battery status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
     ),
 }
 

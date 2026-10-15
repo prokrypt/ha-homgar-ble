@@ -3,8 +3,10 @@
 Local, cloud-free Home Assistant integration for the Bluetooth-only HomGar / RainPoint / BaldrTherm
 **HCS701B** solar thermo-hygrometer (advertises as `HG`).
 
-The sensor broadcasts its readings in BLE advertisements, so this integration only listens:
-it never connects to or writes to the sensor, and it does not need the phone app or the HomGar cloud.
+The sensor broadcasts its readings in BLE advertisements, so temperature and humidity come from passive
+listening. Battery status is only sent over a connection, so when the sensor's advertisement says it wants a
+sync, the integration connects for a few seconds and does the same handshake as the HomGar app.
+No phone app or HomGar cloud is needed.
 (The cloud integrations can't help here anyway: readings from Bluetooth-only HomGar sensors stay on the phone.)
 
 ## Entities
@@ -15,13 +17,19 @@ it never connects to or writes to the sensor, and it does not need the phone app
 | Humidity (%) | |
 | Temperature min / max | sensor's own min/max; disabled by default |
 | Humidity min / max | sensor's own min/max; disabled by default |
+| Battery (binary sensor) | on = low; updated whenever the sensor asks for a sync |
+| Battery status | raw HomGar code (0/1 = normal, higher = low); diagnostic, disabled by default |
 
-Battery level is not included in the advertisements, so it isn't available yet.
+The battery entity appears after the first sync. The sensor asks for one after power-on (e.g. after a
+battery change) and from time to time on its own.
 
 ## Requirements
 
 - Home Assistant with the **Bluetooth** integration working, and an adapter in range of the sensor:
   a local adapter, or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) near it.
+- Battery syncs need a **connectable** adapter or proxy (ESPHome proxies with `active: true` are).
+- The handshake identifies the sensor as device slot 1 of its HomGar home, which is right when it's the only
+  HomGar Bluetooth device there. With several HomGar BLE devices in one home, please open an issue.
 - **Nothing else may stay connected to the sensor.** While the phone app or a tool like nRF Connect
   holds a connection, the sensor stops advertising and Home Assistant gets no updates.
 
@@ -37,7 +45,7 @@ If not, add the integration by hand and choose it from the list.
 
 ## Tested with
 
-- HCS701B, Home Assistant 2026.10.1, local USB adapter (BlueZ).
+- HCS701B (firmware 14), Home Assistant 2026.10.1, local USB adapter (BlueZ).
 
 Other HomGar BLE sensors that advertise the same service UUID (`0x01469191`, model code 326) may work.
 Reports for other models are welcome; include a few advertisement payloads and the values the app shows.

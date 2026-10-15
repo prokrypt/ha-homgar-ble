@@ -35,16 +35,48 @@ def _parse_tlv(b: bytes) -> list[tuple[int, bytes]]:
     return out
 
 
+def _strip_dp_ids(b: bytes) -> bytes:
+    """Drop the dpId byte in front of each record (0x54 report format)."""
+    out, i = bytearray(), 0
+    while i + 1 < len(b):
+        i += 1  # dpId
+        h = b[i]
+        n = 1 if h < 0x80 else 2 + (h & 3) + (1 if ((h >> 2) & 31) == 31 else 0)
+        out += b[i : i + n]
+        i += n
+    return bytes(out)
+
+
 def _f10_to_c(raw: int) -> float:
     return round((raw / 10.0 - 32) * 5 / 9, 1)
 
 
+FLAG_WANTS_SYNC = 0x02
+
+
+def device_id(data: bytes) -> int | None:
+    """Device ID (did) from the service data, needed for GATT auth."""
+    return struct.unpack("<I", data[:4])[0] if len(data) >= 4 else None
+
+
+def wants_sync(data: bytes) -> bool:
+    """Whether the sensor is asking to be connected (it only offers auth then)."""
+    return len(data) > 4 and bool(data[4] & FLAG_WANTS_SYNC)
+
+
 def decode(data: bytes) -> dict[str, float | int]:
     """Return readings found in one service-data payload (empty for the beacon)."""
-    out: dict[str, float | int] = {}
     if len(data) <= HEADER_LEN:
-        return out
-    for code, v in _parse_tlv(data[HEADER_LEN:]):
+        return {}
+    return decode_records(data[HEADER_LEN:])
+
+
+def decode_records(data: bytes, with_dp_ids: bool = False) -> dict[str, float | int]:
+    """Decode HomGar TLV records (advert body, or a 0x54/0x55 report)."""
+    out: dict[str, float | int] = {}
+    if with_dp_ids:
+        data = _strip_dp_ids(data)
+    for code, v in _parse_tlv(data):
         if code == TEM and len(v) >= 2:
             raw = struct.unpack("<h", v[:2])[0]
             if -32768 < raw < 32767:
