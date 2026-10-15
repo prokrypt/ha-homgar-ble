@@ -21,7 +21,8 @@ No phone app or HomGar cloud is needed.
 | Battery status | raw HomGar code (0/1 = normal, higher = low); diagnostic, disabled by default |
 
 The battery entity appears after the first sync. The sensor asks for one after power-on (e.g. after a
-battery change) and from time to time on its own.
+battery change). It did not ask again on its own in about two hours of watching, so the battery state can be
+hours or days old; pull the battery for a few seconds to force a fresh sync.
 
 ## Requirements
 
