@@ -1,4 +1,4 @@
-"""HomGar/RainPoint BLE thermo-hygrometer (HCS701B).
+"""HomGar/RainPoint BLE devices (see models.py for the supported models).
 
 Readings come from passive advertisements. Battery status is only in the report the
 sensor sends over GATT, so we connect briefly whenever the advert says it wants a sync.
@@ -22,35 +22,43 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
-from .const import SERVICE_UUID
-from .parser import decode, device_id, wants_sync
+from .const import CONF_MODEL
+from .models import DEFAULT_MODEL, MODELS, HomGarModel
+from .parser import Readings, decode, device_id, wants_sync
 from .session import async_sync
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 _LOGGER = logging.getLogger(__name__)
 
-MODEL_CODE = int(SERVICE_UUID[:4], 16)  # 0x01469191 -> 0x0146
 MIN_SYNC_INTERVAL = 600
 
 type HomGarConfigEntry = ConfigEntry[ActiveBluetoothProcessorCoordinator]
 
 
+def entry_model(entry: ConfigEntry) -> HomGarModel:
+    """The entry's model; entries from before models were recorded have none."""
+    code = entry.data.get(CONF_MODEL)
+    return DEFAULT_MODEL if code is None else MODELS[code]
+
+
 def device_info(entry: HomGarConfigEntry) -> DeviceInfo:
     """Name the device after the config entry ("HCS701B 1D:5B") instead of the BLE name "HG"."""
-    return DeviceInfo(name=entry.title, manufacturer="HomGar/RainPoint", model="HCS701B")
-
-
-def _update(service_info: BluetoothServiceInfoBleak) -> dict[str, float | int]:
-    data = service_info.service_data.get(SERVICE_UUID)
-    return decode(data) if data else {}
+    return DeviceInfo(
+        name=entry.title, manufacturer="HomGar/RainPoint", model=entry_model(entry).name
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bool:
     address = entry.unique_id
     assert address is not None
+    model = entry_model(entry)
+
+    def _update(service_info: BluetoothServiceInfoBleak) -> Readings:
+        data = service_info.service_data.get(model.service_uuid)
+        return decode(data, model.fields) if data else {}
 
     def _needs_poll(service_info: BluetoothServiceInfoBleak, last_poll: float | None) -> bool:
-        data = service_info.service_data.get(SERVICE_UUID, b"")
+        data = service_info.service_data.get(model.service_uuid, b"")
         return (
             hass.state is CoreState.running
             and wants_sync(data)
@@ -58,12 +66,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bo
             and async_ble_device_from_address(hass, address, connectable=True) is not None
         )
 
-    async def _poll(service_info: BluetoothServiceInfoBleak) -> dict[str, float | int]:
-        did = device_id(service_info.service_data.get(SERVICE_UUID, b""))
+    async def _poll(service_info: BluetoothServiceInfoBleak) -> Readings:
+        did = device_id(service_info.service_data.get(model.service_uuid, b""))
         device = async_ble_device_from_address(hass, address, connectable=True)
         if did is None or device is None:
             raise RuntimeError("no connectable advertisement to sync from")
-        readings = await async_sync(device, MODEL_CODE, did, dt_util.now())
+        readings = await async_sync(device, model.code, model.fields, did, dt_util.now())
         _LOGGER.debug("%s: sync report %s", address, readings)
         return readings
 
