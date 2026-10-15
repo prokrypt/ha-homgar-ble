@@ -1,18 +1,26 @@
-"""Decode HomGar/RainPoint HCS701B advert service data (UUID 0x01469191).
+"""Decode HomGar BLE advert service data (UUID 0x<model>9191) and sync reports.
 
 Frame: 9-byte header, then HomGar TLV records (same format the cloud uses):
   h < 0x80  : 1-byte record, code = (h >> 4) & 7
   h >= 0x80 : code = ((h >> 2) & 31) + 8, value = next (h & 3) + 1 bytes, little-endian
-Temperatures are degF * 10. The sensor also sends a 4-byte beacon with no readings.
+The framing is shared by HomGar devices; what each record code means is per model, so a
+model maps the codes it sends to field decoders (see models.py).
+Temperatures are degF * 10. A 4-byte payload is a beacon with no readings.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 import struct
 
 HEADER_LEN = 9
 
+# Record codes seen so far.
 TEM, RH, TREND, BAT, MAX_TEM, MAX_RH = 9, 10, 22, 31, 33, 34
+
+type Readings = dict[str, float | int]
+# Turns one record's value bytes into readings (empty if the value is unusable).
+type Field = Callable[[bytes], Readings]
 
 
 def _parse_tlv(b: bytes) -> list[tuple[int, bytes]]:
@@ -51,6 +59,53 @@ def _f10_to_c(raw: int) -> float:
     return round((raw / 10.0 - 32) * 5 / 9, 1)
 
 
+# Field decoders. Each factory takes the reading key(s) it fills in.
+
+
+def temp_f10(key: str) -> Field:
+    """S16 degF * 10, reported in degC."""
+
+    def field(v: bytes) -> Readings:
+        if len(v) < 2:
+            return {}
+        raw = struct.unpack("<h", v[:2])[0]
+        return {key: _f10_to_c(raw)} if -32768 < raw < 32767 else {}
+
+    return field
+
+
+def temp_f10_range(key: str) -> Field:
+    """2 x S16 degF * 10 (min and max, either order) -> key_min, key_max in degC."""
+
+    def field(v: bytes) -> Readings:
+        if len(v) < 4:
+            return {}
+        a, b = struct.unpack("<hh", v[:4])
+        return {f"{key}_min": _f10_to_c(min(a, b)), f"{key}_max": _f10_to_c(max(a, b))}
+
+    return field
+
+
+def u8(key: str, invalid: int | None = None) -> Field:
+    """U8, skipped when it equals `invalid`."""
+
+    def field(v: bytes) -> Readings:
+        return {key: v[0]} if v and v[0] != invalid else {}
+
+    return field
+
+
+def u8_range(key: str) -> Field:
+    """2 x U8 (min and max, either order) -> key_min, key_max."""
+
+    def field(v: bytes) -> Readings:
+        if len(v) < 2:
+            return {}
+        return {f"{key}_min": min(v[0], v[1]), f"{key}_max": max(v[0], v[1])}
+
+    return field
+
+
 FLAG_WANTS_SYNC = 0x02
 
 
@@ -64,32 +119,21 @@ def wants_sync(data: bytes) -> bool:
     return len(data) > 4 and bool(data[4] & FLAG_WANTS_SYNC)
 
 
-def decode(data: bytes) -> dict[str, float | int]:
+def decode(data: bytes, fields: Mapping[int, Field]) -> Readings:
     """Return readings found in one service-data payload (empty for the beacon)."""
     if len(data) <= HEADER_LEN:
         return {}
-    return decode_records(data[HEADER_LEN:])
+    return decode_records(data[HEADER_LEN:], fields)
 
 
-def decode_records(data: bytes, with_dp_ids: bool = False) -> dict[str, float | int]:
+def decode_records(
+    data: bytes, fields: Mapping[int, Field], with_dp_ids: bool = False
+) -> Readings:
     """Decode HomGar TLV records (advert body, or a 0x54/0x55 report)."""
-    out: dict[str, float | int] = {}
+    out: Readings = {}
     if with_dp_ids:
         data = _strip_dp_ids(data)
     for code, v in _parse_tlv(data):
-        if code == TEM and len(v) >= 2:
-            raw = struct.unpack("<h", v[:2])[0]
-            if -32768 < raw < 32767:
-                out["temperature"] = _f10_to_c(raw)
-        elif code == RH and v and v[0] != 0xFF:
-            out["humidity"] = v[0]
-        elif code == MAX_TEM and len(v) >= 4:
-            a, b = struct.unpack("<hh", v[:4])
-            out["temperature_min"] = _f10_to_c(min(a, b))
-            out["temperature_max"] = _f10_to_c(max(a, b))
-        elif code == MAX_RH and len(v) >= 2:
-            out["humidity_min"] = min(v[0], v[1])
-            out["humidity_max"] = max(v[0], v[1])
-        elif code == BAT and v:
-            out["battery_level"] = v[0]
+        if field := fields.get(code):
+            out.update(field(v))
     return out

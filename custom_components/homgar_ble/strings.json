@@ -7,7 +7,8 @@
     },
     "abort": {
       "already_configured": "Device is already configured",
-      "no_devices_found": "No HomGar BLE sensors found"
+      "no_devices_found": "No HomGar BLE sensors found",
+      "not_supported": "This HomGar model is not supported yet"
     }
   }
 }

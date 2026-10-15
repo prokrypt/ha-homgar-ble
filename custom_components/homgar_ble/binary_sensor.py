@@ -1,11 +1,10 @@
-"""Battery-low binary sensor for HomGar BLE (from the GATT sync report)."""
+"""Binary sensors for HomGar BLE (e.g. battery low, from the GATT sync report)."""
 
 from __future__ import annotations
 
 from functools import partial
 
 from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
@@ -19,24 +18,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import HomGarConfigEntry, device_info
-
-BATTERY_LOW = BinarySensorEntityDescription(
-    key="battery_low", device_class=BinarySensorDeviceClass.BATTERY
-)
+from . import HomGarConfigEntry, device_info, entry_model
+from .models import HomGarBinarySensorDescription
+from .parser import Readings
 
 
 def _to_update(
-    info: DeviceInfo, readings: dict[str, float | int]
+    info: DeviceInfo,
+    descriptions: tuple[HomGarBinarySensorDescription, ...],
+    readings: Readings,
 ) -> PassiveBluetoothDataUpdate:
-    if "battery_level" not in readings:
-        return PassiveBluetoothDataUpdate(devices={}, entity_descriptions={}, entity_data={}, entity_names={})
-    key = PassiveBluetoothEntityKey("battery_low", None)
+    found = [
+        (PassiveBluetoothEntityKey(d.key, None), d, v)
+        for d in descriptions
+        if (v := d.value_fn(readings)) is not None
+    ]
     return PassiveBluetoothDataUpdate(
-        devices={None: info},
-        entity_descriptions={key: BATTERY_LOW},
-        # HomGar battery status: 0/1 = normal, higher = low.
-        entity_data={key: readings["battery_level"] >= 2},
+        devices={None: info} if found else {},
+        entity_descriptions={ek: d for ek, d, _ in found},
+        entity_data={ek: v for ek, _, v in found},
         entity_names={},
     )
 
@@ -47,7 +47,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    processor = PassiveBluetoothDataProcessor(partial(_to_update, device_info(entry)))
+    processor = PassiveBluetoothDataProcessor(
+        partial(_to_update, device_info(entry), entry_model(entry).binary_sensors)
+    )
     entry.async_on_unload(
         processor.async_add_entities_listener(HomGarBinarySensor, async_add_entities)
     )

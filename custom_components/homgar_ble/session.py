@@ -11,6 +11,7 @@ Any other settings request is left unanswered and the session ends.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import datetime
 import hashlib
 import logging
@@ -19,7 +20,7 @@ import struct
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
-from .parser import decode_records
+from .parser import Field, Readings, decode_records
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,10 +51,17 @@ def t4(now: datetime) -> int:
 
 
 async def async_sync(
-    device: BLEDevice, model: int, did: int, now: datetime
-) -> dict[str, float | int]:
-    """Connect, authenticate, collect the status report, disconnect."""
-    result: asyncio.Future[dict[str, float | int]] = (
+    device: BLEDevice,
+    model: int,
+    fields: Mapping[int, Field],
+    did: int,
+    now: datetime,
+) -> Readings:
+    """Connect, authenticate, collect the status report, disconnect.
+
+    `model` is the HomGar model code for the auth; `fields` decode the report.
+    """
+    result: asyncio.Future[Readings] = (
         asyncio.get_running_loop().create_future()
     )
     buf = bytearray()
@@ -75,7 +83,7 @@ async def async_sync(
         elif op in (0x54, 0x55) and p:
             await send(bytes([op | 0x80, 2, 0, p[0]]))
             if not result.done():
-                result.set_result(decode_records(p[1:], with_dp_ids=op == 0x54))
+                result.set_result(decode_records(p[1:], fields, with_dp_ids=op == 0x54))
         elif not result.done():
             result.set_exception(
                 RuntimeError(f"unexpected frame 0x{op:02x} {p.hex(' ')}")
