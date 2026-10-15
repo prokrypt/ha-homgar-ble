@@ -59,6 +59,11 @@ def _f10_to_c(raw: int) -> float:
     return round((raw / 10.0 - 32) * 5 / 9, 1)
 
 
+def _valid_temp(raw: int) -> bool:
+    """S16 extremes are the sensor's 'no reading' markers."""
+    return -32768 < raw < 32767
+
+
 # Field decoders. Each factory takes the reading key(s) it fills in.
 
 
@@ -69,7 +74,7 @@ def temp_f10(key: str) -> Field:
         if len(v) < 2:
             return {}
         raw = struct.unpack("<h", v[:2])[0]
-        return {key: _f10_to_c(raw)} if -32768 < raw < 32767 else {}
+        return {key: _f10_to_c(raw)} if _valid_temp(raw) else {}
 
     return field
 
@@ -81,6 +86,8 @@ def temp_f10_range(key: str) -> Field:
         if len(v) < 4:
             return {}
         a, b = struct.unpack("<hh", v[:4])
+        if not (_valid_temp(a) and _valid_temp(b)):
+            return {}
         return {f"{key}_min": _f10_to_c(min(a, b)), f"{key}_max": _f10_to_c(max(a, b))}
 
     return field
@@ -95,11 +102,11 @@ def u8(key: str, invalid: int | None = None) -> Field:
     return field
 
 
-def u8_range(key: str) -> Field:
-    """2 x U8 (min and max, either order) -> key_min, key_max."""
+def u8_range(key: str, invalid: int | None = None) -> Field:
+    """2 x U8 (min and max, either order) -> key_min, key_max; skipped if either is `invalid`."""
 
     def field(v: bytes) -> Readings:
-        if len(v) < 2:
+        if len(v) < 2 or invalid in v[:2]:
             return {}
         return {f"{key}_min": min(v[0], v[1]), f"{key}_max": max(v[0], v[1])}
 

@@ -31,6 +31,7 @@ PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 _LOGGER = logging.getLogger(__name__)
 
 MIN_SYNC_INTERVAL = 600
+RETRY_INTERVAL = 60  # after a failed sync
 
 type HomGarConfigEntry = ConfigEntry[ActiveBluetoothProcessorCoordinator]
 
@@ -57,21 +58,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bo
         data = service_info.service_data.get(model.service_uuid)
         return decode(data, model.fields) if data else {}
 
+    syncing = False
+
     def _needs_poll(service_info: BluetoothServiceInfoBleak, last_poll: float | None) -> bool:
         data = service_info.service_data.get(model.service_uuid, b"")
-        return (
-            hass.state is CoreState.running
-            and wants_sync(data)
-            and (last_poll is None or last_poll > MIN_SYNC_INTERVAL)
-            and async_ble_device_from_address(hass, address, connectable=True) is not None
+        if syncing or hass.state is not CoreState.running or not wants_sync(data):
+            return False
+        interval = MIN_SYNC_INTERVAL if coordinator.last_poll_successful else RETRY_INTERVAL
+        return (last_poll is None or last_poll > interval) and (
+            async_ble_device_from_address(hass, address, connectable=True) is not None
         )
 
     async def _poll(service_info: BluetoothServiceInfoBleak) -> Readings:
-        did = device_id(service_info.service_data.get(model.service_uuid, b""))
+        nonlocal syncing
+        data = service_info.service_data.get(model.service_uuid, b"")
+        if not wants_sync(data):
+            # The poll debouncer may replay a poll queued while the last sync was
+            # connecting; the sensor only talks to us while it asks for a sync.
+            _LOGGER.debug("%s: sensor no longer asks for a sync, skipping", address)
+            return {}
+        did = device_id(data)
         device = async_ble_device_from_address(hass, address, connectable=True)
         if did is None or device is None:
             raise RuntimeError("no connectable advertisement to sync from")
-        readings = await async_sync(device, model.code, model.fields, did, dt_util.now())
+        syncing = True
+        try:
+            readings = await async_sync(device, model.code, model.fields, did, dt_util.now())
+        finally:
+            syncing = False
         _LOGGER.debug("%s: sync report %s", address, readings)
         return readings
 
