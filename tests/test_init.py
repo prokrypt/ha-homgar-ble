@@ -93,8 +93,8 @@ async def test_advert_readings_become_sensors(hass: HomeAssistant, entry: MockCo
     assert state(hass, "sensor", "humidity") == "40"
     # Min/max and battery status are disabled by default.
     assert state(hass, "sensor", "temperature_min") is None
-    # No battery reading in adverts.
-    assert state(hass, "binary_sensor", "battery_low") is None
+    # Battery status comes from the advert flags (0x15: normal).
+    assert state(hass, "binary_sensor", "battery_low") == STATE_OFF
 
     [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert (dr.CONNECTION_BLUETOOTH, ADDRESS) in device.connections
@@ -186,6 +186,14 @@ async def test_low_battery(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     await setup(hass, entry)
     with patch(SYNC, AsyncMock(return_value={**REPORT_READINGS, "battery_level": 2})):
         await advertise(hass, payload(flags=0x17))
+    assert state(hass, "binary_sensor", "battery_low") == STATE_ON
+
+
+async def test_low_battery_from_advert(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    await setup(hass, entry)
+    with patch(SYNC) as sync:
+        await advertise(hass, payload(flags=0x25))
+    sync.assert_not_called()
     assert state(hass, "binary_sensor", "battery_low") == STATE_ON
 
 

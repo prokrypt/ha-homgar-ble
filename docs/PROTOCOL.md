@@ -14,11 +14,24 @@ Service data payload:
 | Offset | Size | Meaning |
 |---|---|---|
 | 0 | 4 | Device ID (`did`), as used by the app and the cloud |
-| 4 | 1 | Flags. Bit `0x02` = sensor wants a sync (seen `0x03`/`0x17` after power-on, `0x15` after a sync) |
+| 4 | 1 | Flags, see below |
 | 5 | 4 | Home ID the sensor is bound to |
 | 9 | … | HomGar TLV records with the current readings |
 
 A 4-byte payload (device ID only) is a plain beacon with no readings.
+
+### Flags
+
+As the HomGar app's advert parser reads them:
+
+| Bits | Meaning |
+|---|---|
+| `0x01` | home ID follows |
+| `0x02` | sensor wants a sync (seen `0x03`/`0x17` after power-on, `0x15` otherwise) |
+| `0x04` | records have no dpId prefix |
+| `0x30` | battery status, `(flags & 0x30) >> 4`: 0/1 normal, higher low. The app adds it as a `DC <bat>` record |
+| `0x08`, `0x40` | unknown |
+| `0x80` | another flags byte follows (not seen on the HCS701B) |
 
 ### TLV records
 
@@ -85,7 +98,7 @@ session it accepts connections but stays silent until it wants another sync.
 - `slot` is the sub-device index the HomGar cloud assigned (1 for the only BLE device in a home); `E0 01` (480)
   is a constant in the app; `homeId` is echoed from the `0x52` frame.
 - T4 time, local time of the home: `sec | min<<6 | hour<<12 | day<<17 | month<<22 | (year-2020)<<26`.
-- The report holds the same TLV records as the advert plus `DC <bat>` (battery status: 0/1 normal, higher low).
+- The report holds the same TLV records as the advert plus `DC <bat>` (battery status, same as the flags bits).
   Example: `55 12 01 dc 01 85 31 03 88 2a b8 0d e7 26 03 31 03 e9 2a 34`.
 - The device disconnects a few seconds after the report is acknowledged.
 - `0x59` with other dpIds asks for settings (calibration, units, alert thresholds); those are not answered here.

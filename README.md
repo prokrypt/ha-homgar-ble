@@ -4,8 +4,9 @@ Local, cloud-free Home Assistant integration for the Bluetooth-only HomGar / Rai
 **HCS701B** solar thermo-hygrometer (advertises as `HG`).
 
 The sensor broadcasts its readings in BLE advertisements, so temperature and humidity come from passive
-listening. Battery status is only sent over a connection, so when the sensor's advertisement says it wants a
-sync, the integration connects for a few seconds and does the same handshake as the HomGar app.
+listening, battery status included. When the sensor's advertisement says it wants a sync (after power-on),
+the integration connects for a few seconds, does the same handshake as the HomGar app and sets the sensor's
+clock.
 No phone app or HomGar cloud is needed.
 (The cloud integrations can't help here anyway: readings from Bluetooth-only HomGar sensors stay on the phone.)
 
@@ -17,12 +18,9 @@ No phone app or HomGar cloud is needed.
 | Humidity (%) | |
 | Temperature min / max | sensor's own min/max; disabled by default |
 | Humidity min / max | sensor's own min/max; disabled by default |
-| Battery (binary sensor) | on = low; updated whenever the sensor asks for a sync |
+| Battery (binary sensor) | on = low |
 | Battery status | raw HomGar code (0/1 = normal, higher = low); diagnostic, disabled by default |
 
-The battery entity appears after the first sync. The sensor asks for one after power-on (e.g. after a
-battery change). It did not ask again on its own in about two hours of watching, so the battery state can be
-hours or days old; pull the battery for a few seconds to force a fresh sync.
 
 ## Requirements
 
