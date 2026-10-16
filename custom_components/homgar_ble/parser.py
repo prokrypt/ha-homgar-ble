@@ -6,6 +6,7 @@ Frame: 9-byte header, then HomGar TLV records (same format the cloud uses):
 The framing is shared by HomGar devices; what each record code means is per model, so a
 model maps the codes it sends to field decoders (see models.py).
 Temperatures are degF * 10. A 4-byte payload is a beacon with no readings.
+The battery status rides in the advert's flags byte, as the HomGar app reads it.
 """
 
 from __future__ import annotations
@@ -114,6 +115,8 @@ def u8_range(key: str, invalid: int | None = None) -> Field:
 
 
 FLAG_WANTS_SYNC = 0x02
+# Battery status in bits 4-5, same scale as the BAT record (0/1 normal, higher low).
+FLAG_BATTERY = 0x30
 
 
 def device_id(data: bytes) -> int | None:
@@ -130,7 +133,11 @@ def decode(data: bytes, fields: Mapping[int, Field]) -> Readings:
     """Return readings found in one service-data payload (empty for the beacon)."""
     if len(data) <= HEADER_LEN:
         return {}
-    return decode_records(data[HEADER_LEN:], fields)
+    out = decode_records(data[HEADER_LEN:], fields)
+    if bat := fields.get(BAT):
+        # The app turns these bits into a BAT record for models that have one.
+        out.update(bat(bytes([(data[4] & FLAG_BATTERY) >> 4])))
+    return out
 
 
 def decode_records(

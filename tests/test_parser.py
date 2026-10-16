@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.homgar_ble.models import HCS701B
 from custom_components.homgar_ble.parser import (
+    BAT,
     MAX_RH,
     MAX_TEM,
     RH,
@@ -37,6 +38,7 @@ ADVERT_READINGS = {
     "temperature_max": 26.4,
     "humidity_min": 39,
     "humidity_max": 46,
+    "battery_level": 1,  # flags 0x15
 }
 
 # The 0x55 report example from docs/PROTOCOL.md, after the opcode, length and stateVer bytes.
@@ -120,6 +122,16 @@ def test_beacon_and_header_only_have_no_readings(data: bytes) -> None:
 
 def test_unknown_record_codes_are_ignored() -> None:
     assert decode_records(bytes.fromhex("b8 05 35"), FIELDS) == {}
+
+
+@pytest.mark.parametrize(("flags", "level"), [(0x15, 1), (0x03, 0), (0x17, 1), (0x25, 2), (0x35, 3)])
+def test_battery_from_flags(flags: int, level: int) -> None:
+    assert decode(payload(flags=flags), FIELDS)["battery_level"] == level
+
+
+def test_no_battery_from_flags_for_models_without_it() -> None:
+    fields = {code: f for code, f in FIELDS.items() if code != BAT}
+    assert "battery_level" not in decode(payload(), fields)
 
 
 def test_device_id_and_sync_flag() -> None:

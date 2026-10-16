@@ -90,7 +90,7 @@ HUMIDITY_MIN = SensorEntityDescription(
 HUMIDITY_MAX = SensorEntityDescription(
     key="humidity_max", name="Humidity max", entity_registry_enabled_default=False, **_HUM
 )
-# Raw HomGar battery status code from the sync report (0/1 = normal, higher = low).
+# Raw HomGar battery status code from the advert flags or the sync report (0/1 = normal, higher = low).
 BATTERY_STATUS = SensorEntityDescription(
     key="battery_level",
     name="Battery status",

@@ -1,7 +1,7 @@
 """HomGar/RainPoint BLE devices (see models.py for the supported models).
 
-Readings come from passive advertisements. Battery status is only in the report the
-sensor sends over GATT, so we connect briefly whenever the advert says it wants a sync.
+Readings, battery status included, come from passive advertisements. When the advert says the
+sensor wants a sync (after power-on), we connect briefly, set its clock and take its report.
 """
 
 from __future__ import annotations
