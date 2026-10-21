@@ -19,6 +19,7 @@ from custom_components.homgar_ble.parser import (
     decode,
     decode_records,
     device_id,
+    is_paired,
     temp_f10,
     temp_f10_range,
     u8,
@@ -144,6 +145,14 @@ def test_device_id_and_sync_flag() -> None:
     assert not wants_sync(payload()[:4])
 
 
+def test_paired_flag() -> None:
+    assert is_paired(payload(flags=0x15))
+    assert is_paired(payload(flags=0x03))
+    assert not is_paired(payload(flags=0x14))
+    # A sensor never paired with the app sends only its device ID.
+    assert not is_paired(payload()[:4])
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
@@ -196,3 +205,4 @@ def test_random_payloads_never_raise() -> None:
             assert all(isinstance(v, int | float) for v in readings.values())
         device_id(data)
         wants_sync(data)
+        is_paired(data)

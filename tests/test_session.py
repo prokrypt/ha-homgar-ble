@@ -22,6 +22,7 @@ from custom_components.homgar_ble.session import (
     SyncError,
     async_sync,
     auth_reply,
+    new_home_id,
     t4,
 )
 
@@ -44,16 +45,27 @@ def expected_auth(challenge: bytes) -> bytes:
     return b"\xd0\x05\x00" + struct.pack("<I", total)
 
 
-CONNECT_REQUEST = frame(
-    0x52,
-    struct.pack("<I", DID)
-    + b"\x00"  # pCode
-    + struct.pack("<H", HCS701B.code)
-    + b"\x01\x02"  # hw, sw
-    + struct.pack("<I", HOME_ID)
-    + bytes.fromhex("5b1dddccbbaa"),  # MAC, reversed
-)
-CONNECT_REPLY = bytes([0xD2, 12, 0, 1, 0xE0, 0x01]) + struct.pack("<I", HOME_ID) + bytes(4)
+NEW_HOME_ID = 0x00123456
+
+
+def connect_request(home_id: int = HOME_ID) -> bytes:
+    return frame(
+        0x52,
+        struct.pack("<I", DID)
+        + b"\x00"  # pCode
+        + struct.pack("<H", HCS701B.code)
+        + b"\x01\x02"  # hw, sw
+        + struct.pack("<I", home_id)
+        + bytes.fromhex("5b1dddccbbaa"),  # MAC, reversed
+    )
+
+
+def connect_reply(home_id: int = HOME_ID) -> bytes:
+    return bytes([0xD2, 12, 0, 1, 0xE0, 0x01]) + struct.pack("<I", home_id) + bytes(4)
+
+
+CONNECT_REQUEST = connect_request()
+CONNECT_REPLY = connect_reply()
 TIME_REQUEST = frame(0x59, b"\x02")
 TIME_REPLY = bytes([0xD9, 6, 0, 2]) + struct.pack("<I", t4(NOW))
 REPORT_55 = frame(0x55, bytes([STATE_VER]) + REPORT_RECORDS)
@@ -141,13 +153,15 @@ def no_ack_grace():
         yield
 
 
-async def run(sensor: FakeSensor, timeout: float | None = None) -> dict:
+async def run(
+    sensor: FakeSensor, timeout: float | None = None, home_id: int | None = None
+) -> dict:
     device = ble_device()
     with (
         patch.object(session, "establish_connection", sensor.connect),
         patch.object(session, "SESSION_TIMEOUT", timeout or session.SESSION_TIMEOUT),
     ):
-        return await async_sync(device, HCS701B.code, HCS701B.fields, DID, NOW)
+        return await async_sync(device, HCS701B.code, HCS701B.fields, DID, NOW, home_id)
 
 
 def test_auth_reply_golden_value() -> None:
@@ -246,3 +260,35 @@ async def test_no_writes_after_the_session_ends() -> None:
     assert await run(sensor) == REPORT_READINGS
     await asyncio.sleep(0.01)
     assert sensor.late_writes == 0
+
+
+async def test_pairs_an_unpaired_sensor() -> None:
+    """An unpaired sensor sends home ID 0; the reply gives it the new home."""
+    sensor = FakeSensor(
+        {
+            expected_auth(CHALLENGE): [connect_request(0)],
+            connect_reply(NEW_HOME_ID): [REPORT_55],
+        }
+    )
+    assert await run(sensor, home_id=NEW_HOME_ID) == REPORT_READINGS
+    assert sensor.writes[1] == connect_reply(NEW_HOME_ID)
+
+
+async def test_paired_sensor_keeps_its_home() -> None:
+    sensor = FakeSensor(handshake())
+    assert await run(sensor, home_id=NEW_HOME_ID) == REPORT_READINGS
+    assert sensor.writes[1] == CONNECT_REPLY
+
+
+async def test_unpaired_sensor_stays_unpaired_without_a_home() -> None:
+    sensor = FakeSensor(
+        {expected_auth(CHALLENGE): [connect_request(0)], connect_reply(0): [REPORT_55]}
+    )
+    assert await run(sensor) == REPORT_READINGS
+    assert sensor.writes[1] == connect_reply(0)
+
+
+def test_new_home_id_is_a_positive_int32() -> None:
+    ids = {new_home_id() for _ in range(1000)}
+    assert all(0 < i < 2**31 for i in ids)
+    assert len(ids) > 990

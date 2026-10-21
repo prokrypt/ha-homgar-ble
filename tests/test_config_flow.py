@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_USER
 from homeassistant.const import CONF_ADDRESS
@@ -15,11 +15,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.homgar_ble.const import CONF_MODEL, DOMAIN
 from custom_components.homgar_ble.models import HCS701B
+from custom_components.homgar_ble.session import SyncError
 
-from .conftest import ADDRESS, service_info
+from .conftest import ADDRESS, DID, ble_device, payload, service_info
 
 OTHER_ADDRESS = "AA:BB:CC:DD:00:01"
 UNSUPPORTED_UUID = "ffff9191-0000-1000-8000-00805f9b34fb"
+NEW_HOME_ID = 0x00123456
+FLOW = "custom_components.homgar_ble.config_flow"
 STRINGS = json.loads(
     (Path(__file__).parents[1] / "custom_components/homgar_ble/strings.json").read_text()
 )
@@ -117,6 +120,116 @@ async def test_user_no_devices_found(hass: HomeAssistant) -> None:
     assert result["reason"] == "no_devices_found"
 
 
+def unpaired():
+    """Advert of a sensor never paired with the app: device ID only."""
+    return service_info(payload()[:4])
+
+
+def latest(info):
+    """The advert HA's Bluetooth stack saw last."""
+    return patch(f"{FLOW}.async_last_service_info", return_value=info)
+
+
+@pytest.fixture
+def pairing():
+    """A connectable sensor that completes the session; yields the async_sync mock."""
+    with (
+        patch(f"{FLOW}.async_ble_device_from_address", return_value=ble_device()),
+        patch(f"{FLOW}.new_home_id", return_value=NEW_HOME_ID),
+        patch(f"{FLOW}.async_sync", AsyncMock(return_value={})) as sync,
+    ):
+        yield sync
+
+
+async def start_unpaired(hass: HomeAssistant, choice: str) -> dict:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=unpaired()
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "pair"
+    assert result["menu_options"] == ["pair_app", "pair_here"]
+    assert result["description_placeholders"] == {"name": "HCS701B 1D:5B"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": choice}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == choice
+    return result
+
+
+async def test_pair_from_home_assistant(hass: HomeAssistant, pairing) -> None:
+    result = await start_unpaired(hass, "pair_here")
+    with latest(unpaired()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {CONF_MODEL: HCS701B.code}
+    pairing.assert_awaited_once()
+    args = pairing.await_args.args
+    assert args[0].address == ADDRESS
+    assert (args[1], args[3], args[5]) == (HCS701B.code, DID, NEW_HOME_ID)
+
+
+async def test_pair_from_home_assistant_fails_then_retries(
+    hass: HomeAssistant, pairing
+) -> None:
+    result = await start_unpaired(hass, "pair_here")
+    pairing.side_effect = SyncError("sensor closed the connection")
+    with latest(unpaired()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "pair_failed"}
+
+    pairing.side_effect = None
+    with latest(unpaired()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_pair_from_home_assistant_without_connectable_adapter(
+    hass: HomeAssistant, pairing
+) -> None:
+    result = await start_unpaired(hass, "pair_here")
+    with latest(unpaired()), patch(f"{FLOW}.async_ble_device_from_address", return_value=None):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["errors"] == {"base": "pair_failed"}
+    pairing.assert_not_awaited()
+
+
+async def test_pair_here_skips_pairing_once_the_app_paired_it(
+    hass: HomeAssistant, pairing
+) -> None:
+    result = await start_unpaired(hass, "pair_here")
+    with latest(service_info()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    pairing.assert_not_awaited()
+
+
+async def test_pair_in_the_app(hass: HomeAssistant, pairing) -> None:
+    result = await start_unpaired(hass, "pair_app")
+    with latest(unpaired()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "not_paired"}
+
+    with latest(service_info()):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "HCS701B 1D:5B"
+    pairing.assert_not_awaited()
+
+
+async def test_user_picks_an_unpaired_sensor(hass: HomeAssistant) -> None:
+    with discovered(unpaired()):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    with latest(None):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_ADDRESS: ADDRESS}
+        )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "pair"
+
+
 def test_translations_match_strings() -> None:
     translations = Path(__file__).parents[1] / "custom_components/homgar_ble/translations"
     assert json.loads((translations / "en.json").read_text()) == STRINGS
@@ -125,3 +238,4 @@ def test_translations_match_strings() -> None:
         "no_devices_found",
         "not_supported",
     }
+    assert set(STRINGS["config"]["error"]) == {"not_paired", "pair_failed"}

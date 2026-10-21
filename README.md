@@ -7,7 +7,7 @@ The sensor broadcasts its readings in BLE advertisements, so temperature and hum
 listening, battery status included. When the sensor's advertisement says it wants a sync (after power-on),
 the integration connects for a few seconds, does the same handshake as the HomGar app and sets the sensor's
 clock.
-No phone app or HomGar cloud is needed.
+No HomGar cloud is needed, and after setup no phone app either.
 (The cloud integrations can't help here anyway: readings from Bluetooth-only HomGar sensors stay on the phone.)
 
 ## Entities
@@ -41,6 +41,17 @@ No phone app or HomGar cloud is needed.
 
 The sensor should then be discovered automatically (*Settings → Devices & services → Discovered*).
 If not, add the integration by hand and choose it from the list.
+
+## New sensors
+
+A sensor that was never paired with the HomGar app doesn't send readings yet, only its device ID.
+Setting it up offers two ways to pair it:
+
+- **In the HomGar app (recommended).** Pair it there and install any firmware update the app offers,
+  then close the app and finish the setup in Home Assistant. Firmware updates only come through the app.
+- **From Home Assistant.** The integration does the app's pairing handshake and puts the sensor in a home
+  of its own. The sensor then works in Home Assistant right away, but it has had no firmware update, and
+  the app can only use it again after a factory reset.
 
 ## Tested with
 

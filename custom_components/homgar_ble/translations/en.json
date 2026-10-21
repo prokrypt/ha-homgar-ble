@@ -3,7 +3,27 @@
     "flow_title": "{name}",
     "step": {
       "user": {"description": "Choose a sensor", "data": {"address": "Device"}},
-      "bluetooth_confirm": {"description": "Set up {name}?"}
+      "bluetooth_confirm": {"description": "Set up {name}?"},
+      "pair": {
+        "title": "Pair {name}",
+        "description": "{name} is not paired yet. Recommended: pair it in the HomGar app first and install any firmware update the app offers. You can also pair it from Home Assistant, but then the app can't use it without a factory reset.",
+        "menu_options": {
+          "pair_app": "Pair it in the HomGar app (recommended)",
+          "pair_here": "Pair it from Home Assistant"
+        }
+      },
+      "pair_app": {
+        "title": "Pair {name} in the HomGar app",
+        "description": "1. Add the sensor in the HomGar app and pair it.\n2. Install any firmware update the app offers for it.\n3. Close the app. The sensor stops advertising while the app is connected.\n\nThen submit to add the sensor here."
+      },
+      "pair_here": {
+        "title": "Pair {name} from Home Assistant",
+        "description": "Home Assistant pairs the sensor with a home of its own. This skips the firmware updates the app offers, and the app can only use the sensor again after a factory reset.\n\nKeep the sensor near a connectable Bluetooth adapter or proxy, and make sure no app is connected to it. Pairing takes a few seconds."
+      }
+    },
+    "error": {
+      "not_paired": "The sensor still reports that it is not paired. Finish pairing in the app, close the app and wait a few seconds.",
+      "pair_failed": "Pairing failed. Move the sensor closer to a connectable Bluetooth adapter or proxy and try again."
     },
     "abort": {
       "already_configured": "Device is already configured",
