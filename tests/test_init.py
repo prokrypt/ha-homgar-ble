@@ -126,6 +126,18 @@ async def test_sync_request_reads_battery(hass: HomeAssistant, entry: MockConfig
         assert state(hass, "sensor", "temperature") == "27.6"
 
 
+async def test_sync_sets_firmware_version(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    await setup(hass, entry)
+    await advertise(hass, payload())
+    [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.sw_version is None
+    with patch(SYNC, AsyncMock(return_value={**REPORT_READINGS, "firmware": 14})):
+        await advertise(hass, payload(flags=0x17))
+    [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.sw_version == "14"
+    assert device.name == "HCS701B 1D:5B"
+
+
 async def test_sync_at_most_every_ten_minutes(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     await setup(hass, entry)
     with patch(SYNC, AsyncMock(return_value=REPORT_READINGS)) as sync:

@@ -19,6 +19,7 @@ from homeassistant.components.bluetooth.active_update_processor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
@@ -87,6 +88,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bo
         finally:
             syncing = False
         _LOGGER.debug("%s: sync report %s", address, readings)
+        if (fw := readings.get("firmware")) is not None:
+            # Only a sync carries the version; the registry keeps it across restarts.
+            dr.async_get(hass).async_get_or_create(
+                config_entry_id=entry.entry_id,
+                connections={(dr.CONNECTION_BLUETOOTH, address)},
+                sw_version=str(fw),
+                **device_info(entry),
+            )
         return readings
 
     coordinator = ActiveBluetoothProcessorCoordinator(

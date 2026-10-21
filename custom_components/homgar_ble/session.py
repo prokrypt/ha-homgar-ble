@@ -2,7 +2,7 @@
 
 The sensor offers a session only while its advert flags ask for a sync. Sequence:
   device 50 04 <challenge>   -> host D0 05 00 <auth sum LE32>
-  device 52 ..  (did, home)  -> host D2 0C 00 <slot> E0 01 <home LE32> 00 00 00 00
+  device 52 (did, fw, home)  -> host D2 0C 00 <slot> E0 01 <home LE32> 00 00 00 00
   device 59 01 02 (time)     -> host D9 06 00 02 <T4 local time LE32>   (sometimes)
   device 54/55 <report>      -> host D4/D5 02 00 <stateVer>
 Any other request (settings, stats, history) is logged and left unanswered; the
@@ -80,11 +80,13 @@ async def async_sync(
 
     `model` is the HomGar model code for the auth; `fields` decode the report.
     `home_id` pairs an unpaired sensor with that home; a paired one keeps its own.
+    The readings also hold "firmware", the version the sensor sent in its 0x52 frame.
     """
     loop = asyncio.get_running_loop()
     result: asyncio.Future[Readings] = loop.create_future()
     frames: asyncio.Queue[tuple[int, bytes]] = asyncio.Queue()
     buf = bytearray()
+    firmware: Readings = {}
 
     def fail(err: BaseException) -> None:
         if not result.done():
@@ -109,6 +111,7 @@ async def async_sync(
         if op == 0x50 and len(p) == 4:
             await send(auth_reply(p, model, did))
         elif op == 0x52 and len(p) >= 13:
+            firmware["firmware"] = p[8]
             home = p[9:13]
             if home == bytes(4) and home_id is not None:
                 home = struct.pack("<I", home_id)
@@ -119,7 +122,7 @@ async def async_sync(
         elif op in (0x54, 0x55) and p:
             await send(bytes([op | 0x80, 2, 0, p[0]]))
             if not result.done():
-                result.set_result(decode_records(p[1:], fields, with_dp_ids=op == 0x54))
+                result.set_result(decode_records(p[1:], fields, with_dp_ids=op == 0x54) | firmware)
         else:
             _LOGGER.debug("%s: ignoring frame 0x%02x %s", device.address, op, p.hex(" "))
 
