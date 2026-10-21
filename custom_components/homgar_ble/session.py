@@ -7,6 +7,9 @@ The sensor offers a session only while its advert flags ask for a sync. Sequence
   device 54/55 <report>      -> host D4/D5 02 00 <stateVer>
 Any other request (settings, stats, history) is logged and left unanswered; the
 session ends once the report is in, or when the sensor hangs up, or on timeout.
+
+A sensor that was never paired with the app accepts a session at any time and sends
+home ID 0; answering with another home ID pairs it with that home.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from collections.abc import Mapping
 from datetime import datetime
 import hashlib
 import logging
+import secrets
 import struct
 
 from bleak.backends.device import BLEDevice
@@ -47,6 +51,12 @@ def auth_reply(challenge: bytes, model: int, did: int, pcode: int = 0) -> bytes:
     return bytes([0xD0, 5, 0]) + struct.pack("<I", total)
 
 
+def new_home_id() -> int:
+    """A home ID for pairing without the app. The sensor stores it and echoes it back
+    in later sessions; nothing else checks it."""
+    return secrets.randbelow(0x7FFFFFFF) + 1
+
+
 def t4(now: datetime) -> int:
     return (
         now.second
@@ -64,10 +74,12 @@ async def async_sync(
     fields: Mapping[int, Field],
     did: int,
     now: datetime,
+    home_id: int | None = None,
 ) -> Readings:
     """Connect, authenticate, collect the status report, disconnect.
 
     `model` is the HomGar model code for the auth; `fields` decode the report.
+    `home_id` pairs an unpaired sensor with that home; a paired one keeps its own.
     """
     loop = asyncio.get_running_loop()
     result: asyncio.Future[Readings] = loop.create_future()
@@ -97,7 +109,11 @@ async def async_sync(
         if op == 0x50 and len(p) == 4:
             await send(auth_reply(p, model, did))
         elif op == 0x52 and len(p) >= 13:
-            await send(bytes([0xD2, 12, 0, SLOT, 0xE0, 0x01]) + p[9:13] + bytes(4))
+            home = p[9:13]
+            if home == bytes(4) and home_id is not None:
+                home = struct.pack("<I", home_id)
+                _LOGGER.debug("%s: pairing with home ID %d", device.address, home_id)
+            await send(bytes([0xD2, 12, 0, SLOT, 0xE0, 0x01]) + home + bytes(4))
         elif op == 0x59 and p == bytes([DP_TIME]):
             await send(bytes([0xD9, 6, 0, DP_TIME]) + struct.pack("<I", t4(now)))
         elif op in (0x54, 0x55) and p:

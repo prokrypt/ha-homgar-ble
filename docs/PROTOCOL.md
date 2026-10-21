@@ -18,7 +18,8 @@ Service data payload:
 | 5 | 4 | Home ID the sensor is bound to |
 | 9 | … | HomGar TLV records with the current readings |
 
-A 4-byte payload (device ID only) is a plain beacon with no readings.
+A 4-byte payload (device ID only) is what a sensor sends before it has been paired with a home
+(see [Pairing](#pairing)): no flags, no readings.
 
 ### Flags
 
@@ -102,3 +103,20 @@ session it accepts connections but stays silent until it wants another sync.
   Example: `55 12 01 dc 01 85 31 03 88 2a b8 0d e7 26 03 31 03 e9 2a 34`.
 - The device disconnects a few seconds after the report is acknowledged.
 - `0x59` with other dpIds asks for settings (calibration, units, alert thresholds); those are not answered here.
+
+### Pairing
+
+A sensor that was never paired only advertises its device ID, but unlike a paired one it offers the
+auth challenge on every connection, without a "wants sync" flag. After the auth its `0x52` frame carries
+home ID 0. Answering it with a non-zero home ID pairs the sensor with that home:
+
+```
+device: 52 13 1f7d0049 49 4601 00 0a 00000000 2c7f775223dc     # home ID 0
+host:   D2 0C 00 02 E0 01 7ea10400 00000000                    # home ID 0x0004a17e
+device: 55 12 01 dc 01 85 0f 03 88 28 b8 0d e7 0f 03 10 03 e9 28 2e
+host:   D5 02 00 01
+```
+
+Straight afterwards the advert has flags `0x15`, the new home ID and readings. Seen on an HCS701B
+(firmware 10) on 2026-10-20. The app's own pairing also registers the sensor with the HomGar cloud
+and offers firmware updates; the integration does only the Bluetooth part, with a random home ID.

@@ -114,6 +114,7 @@ def u8_range(key: str, invalid: int | None = None) -> Field:
     return field
 
 
+FLAG_HOME_ID = 0x01
 FLAG_WANTS_SYNC = 0x02
 # Battery status in bits 4-5, same scale as the BAT record (0/1 normal, higher low).
 FLAG_BATTERY = 0x30
@@ -122,6 +123,11 @@ FLAG_BATTERY = 0x30
 def device_id(data: bytes) -> int | None:
     """Device ID (did) from the service data, needed for GATT auth."""
     return struct.unpack("<I", data[:4])[0] if len(data) >= 4 else None
+
+
+def is_paired(data: bytes) -> bool:
+    """Whether the sensor belongs to a HomGar home; an unpaired one sends only its device ID."""
+    return len(data) > 4 and bool(data[4] & FLAG_HOME_ID)
 
 
 def wants_sync(data: bytes) -> bool:
