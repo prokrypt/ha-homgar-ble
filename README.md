@@ -21,6 +21,8 @@ No HomGar cloud is needed, and after setup no phone app either.
 | Battery (binary sensor) | on = low |
 | Battery status | raw HomGar code (0/1 = normal, higher = low); diagnostic, disabled by default |
 
+The firmware version shows on the device page once the sensor has synced (it's only sent during a sync).
+
 
 ## Requirements
 

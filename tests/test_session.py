@@ -64,6 +64,8 @@ def connect_reply(home_id: int = HOME_ID) -> bytes:
     return bytes([0xD2, 12, 0, 1, 0xE0, 0x01]) + struct.pack("<I", home_id) + bytes(4)
 
 
+FIRMWARE = 0x02  # the sw byte above
+SYNC_READINGS = {**REPORT_READINGS, "firmware": FIRMWARE}
 CONNECT_REQUEST = connect_request()
 CONNECT_REPLY = connect_reply()
 TIME_REQUEST = frame(0x59, b"\x02")
@@ -175,7 +177,7 @@ def test_t4_packs_local_time() -> None:
 
 async def test_full_sync_with_clock_request() -> None:
     sensor = FakeSensor(handshake())
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert sensor.writes == [
         expected_auth(CHALLENGE),
         CONNECT_REPLY,
@@ -187,20 +189,20 @@ async def test_full_sync_with_clock_request() -> None:
 
 async def test_sync_without_clock_request() -> None:
     sensor = FakeSensor(handshake(time_request=False))
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert TIME_REPLY not in sensor.writes
 
 
 async def test_report_0x54_with_dp_ids() -> None:
     sensor = FakeSensor(handshake(report=REPORT_54))
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert sensor.writes[-1] == bytes([0xD4, 2, 0, STATE_VER])
 
 
 @pytest.mark.parametrize("chunk", [1, 3, 7])
 async def test_frames_split_across_notifications(chunk: int) -> None:
     sensor = FakeSensor(handshake(), chunk=chunk)
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
 
 
 async def test_several_frames_in_one_notification_answered_in_order() -> None:
@@ -208,7 +210,7 @@ async def test_several_frames_in_one_notification_answered_in_order() -> None:
     script[CONNECT_REPLY] = [TIME_REQUEST, REPORT_55]
     script[TIME_REPLY] = []
     sensor = FakeSensor(script)
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert sensor.writes[-2:] == [TIME_REPLY, bytes([0xD5, 2, 0, STATE_VER])]
 
 
@@ -217,13 +219,13 @@ async def test_other_requests_are_left_unanswered() -> None:
     script = handshake()
     script[TIME_REPLY] = [frame(0x59, b"\x05"), frame(0x60, b"\x01\x02"), REPORT_55]
     sensor = FakeSensor(script)
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert len(sensor.writes) == 4
 
 
 async def test_repeated_challenge_answered_each_time() -> None:
     sensor = FakeSensor(handshake(), opening=[frame(0x50, CHALLENGE)] * 2)
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert sensor.writes.count(expected_auth(CHALLENGE)) == 2
 
 
@@ -257,7 +259,7 @@ async def test_no_writes_after_the_session_ends() -> None:
     script = handshake()
     script[TIME_REPLY] = [REPORT_55] + [TIME_REQUEST, frame(0x60, b"\x01")] * 5
     sensor = FakeSensor(script, chunk=2)
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     await asyncio.sleep(0.01)
     assert sensor.late_writes == 0
 
@@ -270,13 +272,13 @@ async def test_pairs_an_unpaired_sensor() -> None:
             connect_reply(NEW_HOME_ID): [REPORT_55],
         }
     )
-    assert await run(sensor, home_id=NEW_HOME_ID) == REPORT_READINGS
+    assert await run(sensor, home_id=NEW_HOME_ID) == SYNC_READINGS
     assert sensor.writes[1] == connect_reply(NEW_HOME_ID)
 
 
 async def test_paired_sensor_keeps_its_home() -> None:
     sensor = FakeSensor(handshake())
-    assert await run(sensor, home_id=NEW_HOME_ID) == REPORT_READINGS
+    assert await run(sensor, home_id=NEW_HOME_ID) == SYNC_READINGS
     assert sensor.writes[1] == CONNECT_REPLY
 
 
@@ -284,7 +286,7 @@ async def test_unpaired_sensor_stays_unpaired_without_a_home() -> None:
     sensor = FakeSensor(
         {expected_auth(CHALLENGE): [connect_request(0)], connect_reply(0): [REPORT_55]}
     )
-    assert await run(sensor) == REPORT_READINGS
+    assert await run(sensor) == SYNC_READINGS
     assert sensor.writes[1] == connect_reply(0)
 
 
