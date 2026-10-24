@@ -237,3 +237,18 @@ async def test_unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_readings_saved_for_restart(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_storage: dict
+) -> None:
+    """HA saves the last update every 15 min; a value_fn in the descriptions broke that."""
+    await setup(hass, entry)
+    await advertise(hass, payload())
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=16))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    saved = hass_storage["bluetooth.passive_update_processor"]["data"][entry.entry_id]
+    assert saved["binary_sensor"]["entity_descriptions"] == {
+        "battery_low___": {"key": "battery_low", "device_class": "battery"}
+    }
+    assert saved["binary_sensor"]["entity_data"] == {"battery_low___": False}

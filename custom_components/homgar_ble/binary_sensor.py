@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from functools import partial
 
 from homeassistant.components.binary_sensor import (
@@ -23,6 +24,13 @@ from .models import HomGarBinarySensorDescription
 from .parser import Readings
 
 
+def _plain(description: HomGarBinarySensorDescription) -> BinarySensorEntityDescription:
+    """The description without value_fn: HA saves update descriptions as JSON for restarts."""
+    return BinarySensorEntityDescription(
+        **{f.name: getattr(description, f.name) for f in fields(description) if f.name != "value_fn"}
+    )
+
+
 def _to_update(
     info: DeviceInfo,
     descriptions: tuple[HomGarBinarySensorDescription, ...],
@@ -35,7 +43,7 @@ def _to_update(
     ]
     return PassiveBluetoothDataUpdate(
         devices={None: info} if found else {},
-        entity_descriptions={ek: d for ek, d, _ in found},
+        entity_descriptions={ek: _plain(d) for ek, d, _ in found},
         entity_data={ek: v for ek, _, v in found},
         entity_names={},
     )
