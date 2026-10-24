@@ -36,8 +36,10 @@ The firmware version shows on the device page once the sensor has synced (it's o
 
 ## Install
 
-**HACS:** HACS → ⋮ → *Custom repositories* → add `https://github.com/prokrypt/ha-homgar-ble`, category
-*Integration* → install **HomGar/RainPoint BLE Thermo-Hygrometer** → restart Home Assistant.
+**HACS:** search HACS for **HomGar/RainPoint BLE Thermo-Hygrometer** → download → restart Home Assistant.
+
+If it doesn't show up in the search, add it as a custom repository: HACS → ⋮ → *Custom repositories* →
+add `https://github.com/prokrypt/ha-homgar-ble`, category *Integration*, then install as above.
 
 **Manual:** copy `custom_components/homgar_ble` into your HA `config/custom_components/` and restart.
 
