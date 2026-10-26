@@ -162,7 +162,15 @@ class HomGarBleConfigFlow(ConfigFlow, domain=DOMAIN):
         if did is None or device is None:
             raise SyncError("no connectable adapter or proxy has seen the sensor")
         await async_sync(
-            device, self._model.code, self._model.fields, did, dt_util.now(), new_home_id()
+            device,
+            self._model.code,
+            self._model.fields,
+            did,
+            dt_util.now(),
+            new_home_id(),
+            ble_device_callback=lambda: (
+                async_ble_device_from_address(self.hass, self._address, connectable=True) or device
+            ),
         )
 
     def _create_entry(self) -> ConfigFlowResult:

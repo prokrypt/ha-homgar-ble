@@ -15,7 +15,7 @@ home ID 0; answering with another home ID pairs it with that home.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 import hashlib
 import logging
@@ -75,11 +75,13 @@ async def async_sync(
     did: int,
     now: datetime,
     home_id: int | None = None,
+    ble_device_callback: Callable[[], BLEDevice] | None = None,
 ) -> Readings:
     """Connect, authenticate, collect the status report, disconnect.
 
     `model` is the HomGar model code for the auth; `fields` decode the report.
     `home_id` pairs an unpaired sensor with that home; a paired one keeps its own.
+    `ble_device_callback` gives each connection attempt the current best path to the sensor.
     The readings also hold "firmware", the version the sensor sent in its 0x52 frame.
     """
     loop = asyncio.get_running_loop()
@@ -101,6 +103,7 @@ async def async_sync(
         device,
         device.name or device.address,
         disconnected_callback=on_disconnect,
+        ble_device_callback=ble_device_callback,
     )
 
     async def send(data: bytes) -> None:

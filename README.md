@@ -28,7 +28,7 @@ The firmware version shows on the device page once the sensor has synced (it's o
 
 - Home Assistant with the **Bluetooth** integration working, and an adapter in range of the sensor:
   a local adapter, or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) near it.
-- Battery syncs need a **connectable** adapter or proxy (ESPHome proxies with `active: true` are).
+- Syncs need a **connectable** adapter or proxy (ESPHome proxies with `active: true` are).
 - The handshake identifies the sensor as device slot 1 of its HomGar home, which is right when it's the only
   HomGar Bluetooth device there. With several HomGar BLE devices in one home, please open an issue.
 - **Nothing else may stay connected to the sensor.** While the phone app or a tool like nRF Connect

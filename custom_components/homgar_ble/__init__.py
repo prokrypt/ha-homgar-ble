@@ -16,17 +16,23 @@ from homeassistant.components.bluetooth import (
 from homeassistant.components.bluetooth.active_update_processor import (
     ActiveBluetoothProcessorCoordinator,
 )
+from homeassistant.components.bluetooth.passive_update_processor import (
+    PassiveBluetoothDataProcessor,
+    PassiveBluetoothDataUpdate,
+    PassiveBluetoothEntityKey,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityDescription
 from homeassistant.util import dt as dt_util
 
 from .const import CONF_MODEL
 from .models import DEFAULT_MODEL, MODELS, HomGarModel
 from .parser import Readings, decode, device_id, wants_sync
-from .session import async_sync
+from .session import SyncError, async_sync
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +54,25 @@ def device_info(entry: HomGarConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         name=entry.title, manufacturer="HomGar/RainPoint", model=entry_model(entry).name
     )
+
+
+def new_processor(
+    entry: HomGarConfigEntry, descriptions: tuple[EntityDescription, ...]
+) -> PassiveBluetoothDataProcessor:
+    """A processor that turns readings into updates for the entities keyed by them."""
+    info = device_info(entry)
+    by_key = {d.key: d for d in descriptions}
+
+    def to_update(readings: Readings) -> PassiveBluetoothDataUpdate:
+        keys = {k: PassiveBluetoothEntityKey(k, None) for k in readings if k in by_key}
+        return PassiveBluetoothDataUpdate(
+            devices={None: info},
+            entity_descriptions={ek: by_key[k] for k, ek in keys.items()},
+            entity_data={ek: readings[k] for k, ek in keys.items()},
+            entity_names={},
+        )
+
+    return PassiveBluetoothDataProcessor(to_update)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bool:
@@ -81,10 +106,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomGarConfigEntry) -> bo
         did = device_id(data)
         device = async_ble_device_from_address(hass, address, connectable=True)
         if did is None or device is None:
-            raise RuntimeError("no connectable advertisement to sync from")
+            raise SyncError("no connectable advertisement to sync from")
         syncing = True
         try:
-            readings = await async_sync(device, model.code, model.fields, did, dt_util.now())
+            readings = await async_sync(
+                device,
+                model.code,
+                model.fields,
+                did,
+                dt_util.now(),
+                ble_device_callback=lambda: (
+                    async_ble_device_from_address(hass, address, connectable=True) or device
+                ),
+            )
         finally:
             syncing = False
         _LOGGER.debug("%s: sync report %s", address, readings)

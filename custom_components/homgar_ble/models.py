@@ -6,7 +6,7 @@ service_uuid to the "bluetooth" matchers in manifest.json so HA discovers it.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from homeassistant.components.binary_sensor import (
@@ -28,19 +28,12 @@ from .parser import (
     RH,
     TEM,
     Field,
-    Readings,
+    battery,
     temp_f10,
     temp_f10_range,
     u8,
     u8_range,
 )
-
-
-@dataclass(frozen=True, kw_only=True)
-class HomGarBinarySensorDescription(BinarySensorEntityDescription):
-    """Binary sensor computed from the readings; None means not in this update."""
-
-    value_fn: Callable[[Readings], bool | None]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,7 +44,7 @@ class HomGarModel:
     fields: Mapping[int, Field]
     # Entities, keyed by the reading they show (description.key).
     sensors: tuple[SensorEntityDescription, ...] = ()
-    binary_sensors: tuple[HomGarBinarySensorDescription, ...] = ()
+    binary_sensors: tuple[BinarySensorEntityDescription, ...] = ()
 
     @property
     def service_uuid(self) -> str:
@@ -97,10 +90,8 @@ BATTERY_STATUS = SensorEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
     entity_registry_enabled_default=False,
 )
-BATTERY_LOW = HomGarBinarySensorDescription(
-    key="battery_low",
-    device_class=BinarySensorDeviceClass.BATTERY,
-    value_fn=lambda r: r["battery_level"] >= 2 if "battery_level" in r else None,
+BATTERY_LOW = BinarySensorEntityDescription(
+    key="battery_low", device_class=BinarySensorDeviceClass.BATTERY
 )
 
 
@@ -112,7 +103,7 @@ HCS701B = HomGarModel(
         RH: u8("humidity", invalid=0xFF),
         MAX_TEM: temp_f10_range("temperature"),
         MAX_RH: u8_range("humidity", invalid=0xFF),
-        BAT: u8("battery_level"),
+        BAT: battery("battery_level", "battery_low"),
     },
     sensors=(
         TEMPERATURE,
