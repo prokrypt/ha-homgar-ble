@@ -122,6 +122,8 @@ async def test_sync_request_reads_battery(hass: HomeAssistant, entry: MockConfig
             HCS701B.fields,
             DID,
         )
+        # Each connection attempt may pick a fresh path to the sensor.
+        assert sync.await_args.kwargs["ble_device_callback"]().address == ADDRESS
         assert state(hass, "binary_sensor", "battery_low") == STATE_OFF
         assert state(hass, "sensor", "temperature") == "27.6"
 
@@ -196,7 +198,7 @@ async def test_replayed_poll_skipped_once_sensor_stops_asking(
 
 async def test_low_battery(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     await setup(hass, entry)
-    with patch(SYNC, AsyncMock(return_value={**REPORT_READINGS, "battery_level": 2})):
+    with patch(SYNC, AsyncMock(return_value={**REPORT_READINGS, "battery_low": True})):
         await advertise(hass, payload(flags=0x17))
     assert state(hass, "binary_sensor", "battery_low") == STATE_ON
 
@@ -242,7 +244,7 @@ async def test_unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
 async def test_readings_saved_for_restart(
     hass: HomeAssistant, entry: MockConfigEntry, hass_storage: dict
 ) -> None:
-    """HA saves the last update every 15 min; a value_fn in the descriptions broke that."""
+    """HA saves the last update every 15 min; the descriptions must be plain JSON."""
     await setup(hass, entry)
     await advertise(hass, payload())
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=16))

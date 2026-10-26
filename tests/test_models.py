@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from custom_components.homgar_ble.models import (
-    BATTERY_LOW,
     DEFAULT_MODEL,
     HCS701B,
     MODELS,
@@ -44,6 +43,8 @@ def test_manifest_matches_every_model() -> None:
     """HA only offers discovery for UUIDs listed in the manifest's bluetooth matchers."""
     matched = {m["service_data_uuid"] for m in MANIFEST["bluetooth"]}
     assert matched == {model.service_uuid for model in MODELS.values()}
+    # Readings are passive, so discovery must also work from non-connectable adapters and proxies.
+    assert all(m["connectable"] is False for m in MANIFEST["bluetooth"])
 
 
 @ALL_MODELS
@@ -54,22 +55,10 @@ def test_sensors_show_readings_the_model_decodes(model: HomGarModel) -> None:
 
 
 @ALL_MODELS
-def test_binary_sensors_have_readings_to_work_from(model: HomGarModel) -> None:
+def test_binary_sensors_show_readings_the_model_decodes(model: HomGarModel) -> None:
     keys = [d.key for d in model.binary_sensors]
     assert len(keys) == len(set(keys)), "duplicate binary sensor keys"
-    full = {key: 1 for key in readings_keys(model)}
-    for description in model.binary_sensors:
-        assert description.value_fn({}) is None
-        assert description.value_fn(full) is not None, description.key
-
-
-@pytest.mark.parametrize(("level", "low"), [(0, False), (1, False), (2, True), (3, True)])
-def test_battery_low(level: int, low: bool) -> None:
-    assert BATTERY_LOW.value_fn({"battery_level": level}) is low
-
-
-def test_battery_low_absent_without_battery_reading() -> None:
-    assert BATTERY_LOW.value_fn({"temperature": 20.0}) is None
+    assert set(keys) <= readings_keys(model)
 
 
 def test_model_from_service_info() -> None:

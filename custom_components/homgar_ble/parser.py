@@ -5,7 +5,7 @@ Frame: 9-byte header, then HomGar TLV records (same format the cloud uses):
   h >= 0x80 : code = ((h >> 2) & 31) + 8, value = next (h & 3) + 1 bytes, little-endian
 The framing is shared by HomGar devices; what each record code means is per model, so a
 model maps the codes it sends to field decoders (see models.py).
-Temperatures are degF * 10. A 4-byte payload is a beacon with no readings.
+Temperatures are degF * 10. A 4-byte payload (device ID only) comes from an unpaired sensor.
 The battery status rides in the advert's flags byte, as the HomGar app reads it.
 """
 
@@ -103,7 +103,7 @@ def u8(key: str, invalid: int | None = None) -> Field:
     return field
 
 
-def u8_range(key: str, invalid: int | None = None) -> Field:
+def u8_range(key: str, invalid: int) -> Field:
     """2 x U8 (min and max, either order) -> key_min, key_max; skipped if either is `invalid`."""
 
     def field(v: bytes) -> Readings:
@@ -114,8 +114,18 @@ def u8_range(key: str, invalid: int | None = None) -> Field:
     return field
 
 
+def battery(key: str, low_key: str) -> Field:
+    """U8 HomGar battery status (0/1 normal, higher low) -> key, and low_key as a bool."""
+
+    def field(v: bytes) -> Readings:
+        return {key: v[0], low_key: v[0] >= 2} if v else {}
+
+    return field
+
+
 FLAG_HOME_ID = 0x01
 FLAG_WANTS_SYNC = 0x02
+FLAG_NO_DP_IDS = 0x04  # records carry no dpId byte (as the HomGar app reads it)
 # Battery status in bits 4-5, same scale as the BAT record (0/1 normal, higher low).
 FLAG_BATTERY = 0x30
 
@@ -136,10 +146,10 @@ def wants_sync(data: bytes) -> bool:
 
 
 def decode(data: bytes, fields: Mapping[int, Field]) -> Readings:
-    """Return readings found in one service-data payload (empty for the beacon)."""
+    """Return readings found in one service-data payload (empty without records)."""
     if len(data) <= HEADER_LEN:
         return {}
-    out = decode_records(data[HEADER_LEN:], fields)
+    out = decode_records(data[HEADER_LEN:], fields, with_dp_ids=not data[4] & FLAG_NO_DP_IDS)
     if bat := fields.get(BAT):
         # The app turns these bits into a BAT record for models that have one.
         out.update(bat(bytes([(data[4] & FLAG_BATTERY) >> 4])))

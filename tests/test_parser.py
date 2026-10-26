@@ -16,6 +16,7 @@ from custom_components.homgar_ble.parser import (
     TREND,
     _parse_tlv,
     _strip_dp_ids,
+    battery,
     decode,
     decode_records,
     device_id,
@@ -40,12 +41,14 @@ ADVERT_READINGS = {
     "humidity_min": 39,
     "humidity_max": 46,
     "battery_level": 1,  # flags 0x15
+    "battery_low": False,
 }
 
 # The 0x55 report example from docs/PROTOCOL.md, after the opcode, length and stateVer bytes.
 REPORT_RECORDS = bytes.fromhex("dc 01 85 31 03 88 2a b8 0d e7 26 03 31 03 e9 2a 34")
 REPORT_READINGS = {
     "battery_level": 1,
+    "battery_low": False,
     "temperature": 27.6,  # 81.7 degF
     "humidity": 42,
     "temperature_min": 27.0,  # 80.6 degF
@@ -105,6 +108,12 @@ def test_decode_documented_report_0x55() -> None:
     assert decode_records(REPORT_RECORDS, FIELDS) == REPORT_READINGS
 
 
+def test_decode_advert_with_dp_ids_when_flag_0x04_is_clear() -> None:
+    """Flag 0x04 says the records carry no dpId byte; without it they do (as the app reads it)."""
+    assert decode(payload(flags=0x11, records=with_dp_ids(ADVERT_RECORDS)), FIELDS) == ADVERT_READINGS
+    assert decode(payload(flags=0x11), FIELDS)["battery_level"] == 1
+
+
 def test_decode_report_0x54_with_dp_ids() -> None:
     framed = with_dp_ids(REPORT_RECORDS)
     assert _strip_dp_ids(framed) == REPORT_RECORDS
@@ -117,7 +126,7 @@ def test_strip_dp_ids_keeps_extended_code_byte() -> None:
 
 
 @pytest.mark.parametrize("data", [b"", b"\x01\x02\x03\x04", payload(records=b"")])
-def test_beacon_and_header_only_have_no_readings(data: bytes) -> None:
+def test_unpaired_and_header_only_have_no_readings(data: bytes) -> None:
     assert decode(data, FIELDS) == {}
 
 
@@ -183,6 +192,12 @@ def test_u8_fields() -> None:
     assert u8_range("h", invalid=0xFF)(b"\x2e\x27") == {"h_min": 39, "h_max": 46}
     assert u8_range("h", invalid=0xFF)(b"\xff\xff") == {}
     assert u8_range("h", invalid=0xFF)(b"\x27") == {}
+
+
+@pytest.mark.parametrize(("level", "low"), [(0, False), (1, False), (2, True), (3, True)])
+def test_battery_field(level: int, low: bool) -> None:
+    assert battery("level", "low")(bytes([level])) == {"level": level, "low": low}
+    assert battery("level", "low")(b"") == {}
 
 
 def test_sentinel_min_max_records_are_dropped() -> None:

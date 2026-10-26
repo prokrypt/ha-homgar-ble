@@ -103,6 +103,7 @@ class FakeSensor:
     ) -> FakeSensor:
         """Stands in for bleak_retry_connector.establish_connection."""
         self.disconnected_callback = kwargs["disconnected_callback"]
+        self.ble_device_callback = kwargs["ble_device_callback"]
         return self
 
     async def start_notify(self, char: str, callback: Callable) -> None:
@@ -178,6 +179,7 @@ def test_t4_packs_local_time() -> None:
 async def test_full_sync_with_clock_request() -> None:
     sensor = FakeSensor(handshake())
     assert await run(sensor) == SYNC_READINGS
+    assert sensor.ble_device_callback is None  # none given, so the connector keeps the device
     assert sensor.writes == [
         expected_auth(CHALLENGE),
         CONNECT_REPLY,
